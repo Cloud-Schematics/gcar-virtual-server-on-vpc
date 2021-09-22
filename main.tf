@@ -93,15 +93,32 @@ locals {
 }
 
 module virtual_servers {
-  source            = "./virtual_server"
-  resource_group_id = data.ibm_resource_group.resource_group.id
-  prefix            = var.prefix
-  vpc_id            = data.ibm_is_vpc.vpc.id
-  subnets           = local.subnets
-  ssh_key_id        = local.ssh_key_id
-  vsi_per_subnet    = var.vsi_per_subnet
-  machine_type      = var.machine_type
-  user_data         = var.user_data_file_path == null ? null : file("${path.module}/${var.user_data_file_path}")
+  source               = "./virtual_server"
+  resource_group_id    = data.ibm_resource_group.resource_group.id
+  prefix               = var.prefix
+  vpc_id               = data.ibm_is_vpc.vpc.id
+  subnets              = local.subnets
+  ssh_key_id           = local.ssh_key_id
+  vsi_per_subnet       = var.vsi_per_subnet
+  security_group_rules = var.security_group_rules
+  enable_floating_ip   = var.enable_floating_ip
+  machine_type         = var.machine_type
+  user_data            = var.user_data_file_path == null ? null : file("${path.module}/${var.user_data_file_path}")
+}
+
+module load_balancer {
+  source               = "./load_balancer"
+  resource_group_id    = data.ibm_resource_group.resource_group.id
+  security_group_rules = var.lb_security_group_rules
+  vpc_id               = data.ibm_is_vpc.vpc.id
+  prefix               = var.prefix
+  load_balancer        = {
+    public     = var.use_public_load_balancer
+    subnet_ids = local.subnets.*.id
+  }
+  pool                 = var.pool
+  listener             = var.listener
+  pool_members         = module.virtual_servers.list
 }
 
 ##############################################################################

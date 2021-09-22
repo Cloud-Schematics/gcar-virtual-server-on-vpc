@@ -1,9 +1,10 @@
 ##############################################################################
-# Account Variables
+# Load Balancer Variables
+# Copyright 2020 IBM
 ##############################################################################
 
 variable resource_group_id {
-  description = "ID of resource group to create Virtual Servers"
+  description = "ID of resource group to create resources"
   type        = string
 }
 
@@ -18,115 +19,126 @@ variable prefix {
     }
 }
 
-##############################################################################
-
-
-##############################################################################
-# VPC Variables
-##############################################################################
-
 variable vpc_id {
   description = "ID of VPC"
   type        = string
 }
 
-variable subnets {
-    description = "A list of subnet names and zones where Virtual Servers will be created"
-    type        = list(
-        object(
-            {
-                id   = string
-                name = string
-                zone = string
-            }
-        )
-    )
+variable load_balancer {
+  description = "Load balancer to be created"
+  type        = object({
+    subnet_ids         = list(string)
+    public             = bool
+    logging            = optional(string)
+    tags               = optional(list(string))
+  })
 }
 
 ##############################################################################
 
 
 ##############################################################################
-# Compute Variables
+# Required Pool Variables
 ##############################################################################
 
-variable image {
-    description = "Image name used for VSI. Run 'ibmcloud is images' to find available images in a region"
-    type        = string
-    default     = "ibm-ubuntu-18-04-1-minimal-amd64-1"
-}
+variable pool {
+    description = "Load balancer pool to be created"
+    type        = object({
+        algorithm                = string
+        protocol                 = string
+        health_delay             = number
+        health_retries           = number
+        health_timeout           = number
+        health_type              = string
+        pool_member_port         = number
+        health_monitor_url       = optional(string)
+        health_monitor_port      = optional(number)
+        proxy_protocol           = optional(string)
+        session_persistence_type = optional(string)
+    })
 
-variable ssh_key_id {
-    description = "SSH Public key ID to use for compute resources"
-    type        = string
-}
+    default = {
+        algorithm        = "round_robin"
+        protocol         = "http"
+        health_delay     = 15
+        health_retries   = 10
+        health_timeout   = 10
+        pool_member_port = 80
+        health_type      = "http"
+    }
+      
+    validation {
+        error_message = "Load Balancer Pool algorithm can only be `round_robin`, `weighted_round_robin`, or `least_connections`."
+        condition     = var.pool.algorithm == "round_robin" || var.pool.algorithm == "weighted_round_robin" || var.pool.algorithm == "least_connections"
+    }
 
-variable machine_type {
-    description = "VSI machine type. Run 'ibmcloud is instance-profiles' to get a list of regional profiles"
-    type        =  string
-    default     = "bx2-2x8"
-}
+    validation {
+        error_message = "Load Balancer Pool Protocol can only be `http`, `https`, or `tcp`."
+        condition     = var.pool.protocol == "http" || var.pool.protocol == "https" || var.pool.protocol == "tcp"
+    }
 
-variable vsi_per_subnet {
-    description = "Number of VSI instances for each subnet"
-    type        = number
-    default     = 1
-}
+    validation {
+        error_message = "Pool health delay must be greater than the timeout."
+        condition     = var.pool.health_delay > var.pool.health_timeout
+    }
 
-variable user_data {
-    description = "Post provision script"
-    type        = string
-    default     = null
+    validation {
+        error_message = "Load Balancer Pool Health Check Type can only be `http`, `https`, or `tcp`."
+        condition     = var.pool.health_type == "http" || var.pool.health_type == "https" || var.pool.health_type == "tcp"
+    }
 }
-
 ##############################################################################
 
 
 ##############################################################################
-# Volume Variables
+# Load Balancer Pool Member Variables
 ##############################################################################
 
-variable volumes {
-    description = "A list of volumes to be added to each virtual server instance"
+variable pool_members {
+    description = "A list of VSI IDs that will be connected in a load balancer pool"
     type        = list(
         object({
-            name           = string
-            profile        = string
-            capacity       = optional(number)
+            name         = string
+            id           = string
+            zone         = string
+            ipv4_address = string
+            floating_ip  = optional(string)
         })
     )
-    default    = [
-        {
-            name     = "one"
-            profile  = "10iops-tier"
-            capacity = 25
-        },
-        {
-            name    = "two"
-            profile = "10iops-tier"
-        },
-        {
-            name    = "three"
-            profile = "10iops-tier"
-        }
-    ]
 }
+##############################################################################
 
-variable enable_floating_ip {
-  description = "Create a floating IP for each virtual server created"
-  type        = bool
-  default     = true
+
+##############################################################################
+# Requited Load Balancer Listener Variables
+##############################################################################
+
+variable listener {
+    description = "Load balancer listener"
+    type        = object({
+        port                  = number
+        protocol              = string
+        certificate_instance  = optional(string)
+        certificate_instance  = optional(string)
+        accept_proxy_protocol = optional(bool)
+        connection_limit      = optional(number)
+    })
+
+
+    validation {
+        error_message = "Load Balancer Listener Protocol can only be `http`, `https`, or `tcp`."
+        condition     = var.listener.protocol == "http" || var.listener.protocol == "https" || var.listener.protocol == "tcp"
+    }
 }
 
 ##############################################################################
-
 
 ##############################################################################
 # Security Group Rules
 ##############################################################################
 
 variable security_group_rules {
-  description = "A list of security group rules to be added to the VSI security group"
+  description = "A list of security group rules to be added to the Load Balancer security group"
   type        = list(
     object({
       name        = string
@@ -155,21 +167,9 @@ variable security_group_rules {
 
   default = [
     {
-      name      = "allow-inbound-ping"
-      direction = "inbound"
-      remote    = "0.0.0.0/0"
-      icmp      = {
-        type = 8
-      }
-    },
-    {
-      name      = "allow-inbound-ssh"
-      direction = "inbound"
-      remote    = "0.0.0.0/0"
-      tcp       = {
-        port_min = 22
-        port_max = 22
-      }
+        name      = "allow-all-inbound"
+        direction = "inbound"
+        remote    = "0.0.0.0/0"
     },
     {
         name      = "allow-all-outbound"

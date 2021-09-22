@@ -15,9 +15,10 @@ locals {
             # For each number in a range from 0 to VSI per subnet
             for count in range(var.vsi_per_subnet):
             {
-                name      = "${subnet.name}-${var.prefix}-${count + 1}"
-                subnet_id = subnet.id
-                zone      = subnet.zone
+                name        = "${subnet.name}-${var.prefix}-${count + 1}"
+                subnet_id   = subnet.id
+                zone        = subnet.zone
+                subnet_name = subnet.name
             }
         ]
     ])
@@ -51,7 +52,23 @@ resource ibm_is_instance vsi {
     primary_network_interface {
         subnet          = each.value.subnet_id
         security_groups = [ ibm_is_security_group.vsi_security_group.id ]
-    }  
+    }
+
+    # Only add volumes if volumes are being created by the module
+    volumes        = length(var.volumes) == 0 ? [] : local.volume_by_vsi[each.key]
+}
+
+##############################################################################
+
+
+##############################################################################
+# Optionally create floating IP
+##############################################################################
+
+resource ibm_is_floating_ip vsi_fip {
+  for_each = var.enable_floating_ip ? ibm_is_instance.vsi : {}
+  name     = "${each.value.name}-fip"
+  target   = each.value.primary_network_interface.0.id
 }
 
 ##############################################################################
