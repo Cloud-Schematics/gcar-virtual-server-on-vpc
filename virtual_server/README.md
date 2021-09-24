@@ -1,0 +1,48 @@
+# Virtual Server Module
+
+This module creates any number of virtual servers equally across any number of subnets.
+
+## Module Variables
+
+Name                 | Type                                                                                                                                                                                                                                                                                                                            | Description                                                                              | Sensitive | Default
+-------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+resource_group_id    | string                                                                                                                                                                                                                                                                                                                          | ID of resource group to create Virtual Servers                                           |           | 
+prefix               | string                                                                                                                                                                                                                                                                                                                          | A unique identifier need to provision resources. Must begin with a letter                |           | gcat-vsi
+vpc_id               | string                                                                                                                                                                                                                                                                                                                          | ID of VPC                                                                                |           | 
+subnets              | list( object( { id = string name = string zone = string } ) )                                                                                                                                                                                                                                                                   | A list of subnet names and zones where Virtual Servers will be created                   |           | 
+image                | string                                                                                                                                                                                                                                                                                                                          | Image name used for VSI. Run 'ibmcloud is images' to find available images in a region   |           | ibm-ubuntu-18-04-1-minimal-amd64-1
+ssh_key_id           | string                                                                                                                                                                                                                                                                                                                          | SSH Public key ID to use for compute resources                                           |           | 
+machine_type         | string                                                                                                                                                                                                                                                                                                                          | VSI machine type. Run 'ibmcloud is instance-profiles' to get a list of regional profiles |           | bx2-2x8
+vsi_per_subnet       | number                                                                                                                                                                                                                                                                                                                          | Number of VSI instances for each subnet                                                  |           | 1
+user_data            | string                                                                                                                                                                                                                                                                                                                          | Post provision script                                                                    |           | null
+volumes              | list( object({ name = string profile = string capacity = optional(number) }) )                                                                                                                                                                                                                                                  | A list of volumes to be added to each virtual server instance                            |           | [<br>{<br>name = "one"<br>profile = "10iops-tier"<br>capacity = 25<br>},<br>{<br>name = "two"<br>profile = "10iops-tier"<br>},<br>{<br>name = "three"<br>profile = "10iops-tier"<br>}<br>]
+enable_floating_ip   | bool                                                                                                                                                                                                                                                                                                                            | Create a floating IP for each virtual server created                                     |           | true
+security_group_rules | list( object({ name = string direction = string remote = string tcp = optional( object({ port_max = optional(number) port_min = optional(number) }) ) udp = optional( object({ port_max = optional(number) port_min = optional(number) }) ) icmp = optional( object({ type = optional(number) code = optional(number) }) ) }) ) | A list of security group rules to be added to the VSI security group                     |           | [<br>{<br>name = "allow-inbound-ping"<br>direction = "inbound"<br>remote = "0.0.0.0/0"<br>icmp = {<br>type = 8<br>}<br>},<br>{<br>name = "allow-inbound-ssh"<br>direction = "inbound"<br>remote = "0.0.0.0/0"<br>tcp = {<br>port_min = 22<br>port_max = 22<br>}<br>},<br>{<br>name = "allow-all-outbound"<br>direction = "outbound"<br>remote = "0.0.0.0/0"<br>}<br>]
+
+## Module Outputs
+
+Name          | Description                                                 | Value
+------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ids           | The IDs of the VSI                                          | [ for virtual_server in ibm_is_instance.vsi: virtual_server.id ]
+vsi_by_subnet | A list of virtual servers by subnet                         | { for subnet_name in distinct(local.vsi_list.*.subnet_name): subnet_name => [ for virtual_server in local.vsi_list: { name = ibm_is_instance.vsi[virtual_server.name].name id = ibm_is_instance.vsi[virtual_server.name].id zone = ibm_is_instance.vsi[virtual_server.name].zone ipv4_address = ibm_is_instance.vsi[virtual_server.name].primary_network_interface.0.primary_ipv4_address } if virtual_server.subnet_name == subnet_name ] }
+list          | A list of VSI with name, id, zone, and primary ipv4 address | [ for virtual_server in ibm_is_instance.vsi: { name = virtual_server.name id = virtual_server.id zone = virtual_server.zone ipv4_address = virtual_server.primary_network_interface.0.primary_ipv4_address floating_ip = var.enable_floating_ip ? ibm_is_floating_ip.vsi_fip[virtual_server.name].address : null } ]
+
+## Example Module
+
+```terraform
+module virtual_servers {
+  source               = "./virtual_servers"
+  resource_group_id    = var.resource_group_id
+  prefix               = var.prefix
+  vpc_id               = var.vpc_id
+  subnets              = var.subnets
+  image                = var.image
+  ssh_key_id           = var.ssh_key_id
+  machine_type         = var.machine_type
+  vsi_per_subnet       = var.vsi_per_subnet
+  user_data            = var.user_data
+  volumes              = var.volumes
+  enable_floating_ip   = var.enable_floating_ip
+  security_group_rules = var.security_group_rules
+}
+```

@@ -124,6 +124,10 @@ variable listener {
         connection_limit      = optional(number)
     })
 
+    default = {
+      port     = 80
+      protocol = "http"
+    }
 
     validation {
         error_message = "Load Balancer Listener Protocol can only be `http`, `https`, or `tcp`."

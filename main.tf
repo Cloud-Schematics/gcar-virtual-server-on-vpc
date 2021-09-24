@@ -88,6 +88,7 @@ locals {
       id   = subnet.id
       name = subnet.name
       zone = subnet.zone
+      cidr = subnet.ipv4_cidr_block
     }
   ]
 }
@@ -100,16 +101,44 @@ module virtual_servers {
   subnets              = local.subnets
   ssh_key_id           = local.ssh_key_id
   vsi_per_subnet       = var.vsi_per_subnet
+  volumes              = var.volumes
   security_group_rules = var.security_group_rules
   enable_floating_ip   = var.enable_floating_ip
   machine_type         = var.machine_type
   user_data            = var.user_data_file_path == null ? null : file("${path.module}/${var.user_data_file_path}")
 }
 
+##############################################################################\
+
+
+##############################################################################\
+# Create Load Balancer
+##############################################################################\
+
+locals {
+  # Create security group rules to allow inbound traffic from
+  # subnets where the load balancer will be provisioned
+  subnet_security_group_rules = flatten([
+    for subnet in local.subnets: 
+    [
+      {
+        name      = "allow-inbound-${subnet.name}"
+        remote    = subnet.cidr
+        direction = "inbound"
+      },
+      {
+        name      = "allow-outbound-${subnet.name}"
+        remote    = subnet.cidr
+        direction = "outbound"
+      }
+    ]
+  ])
+}
+
 module load_balancer {
   source               = "./load_balancer"
   resource_group_id    = data.ibm_resource_group.resource_group.id
-  security_group_rules = var.lb_security_group_rules
+  security_group_rules = concat(local.subnet_security_group_rules, var.lb_security_group_rules) # Add load balancer rules and subnet rules into a single list
   vpc_id               = data.ibm_is_vpc.vpc.id
   prefix               = var.prefix
   load_balancer        = {

@@ -13,6 +13,7 @@ variable ibmcloud_api_key {
 # Comment out if not running in schematics
 variable TF_VERSION {
  default     = "1.0"
+ type        = string
  description = "The version of the Terraform engine that's used in the Schematics workspace."
 }
 
@@ -78,6 +79,7 @@ variable ssh_public_key {
   description = "SSH Public Key to create when creating virtual server instances. Using this value will override `existing_ssh_key_name`."
   type        = string
   default     = null
+  sensitive   = true
 }
 
 variable existing_ssh_key_name {
@@ -306,11 +308,11 @@ variable listener {
         port     = number
         protocol = string
     })
+
     default = {
       port     = 80
       protocol = "http"
     }
-
 
     validation {
         error_message = "Load Balancer Listener Protocol can only be `http`, `https`, or `tcp`."
@@ -354,14 +356,18 @@ variable lb_security_group_rules {
 
   default = [
     {
-        name      = "allow-all-inbound"
-        direction = "inbound"
-        remote    = "0.0.0.0/0"
+      name      = "allow-inbound-port-80"
+      direction = "inbound"
+      remote    = "0.0.0.0/0"
+      tcp       = {
+        port_min = 80
+        port_max = 80
+      }
     },
     {
-        name      = "allow-all-outbound"
-        direction = "outbound"
-        remote    = "0.0.0.0/0"
+      name      = "allow-all-outbound"
+      direction = "outbound"
+      remote    = "0.0.0.0/0"
     }
   ]
 
@@ -371,7 +377,7 @@ variable lb_security_group_rules {
       # Get flat list of results
       flatten([
         # Check through rules
-        for rule in var.security_group_rules:
+        for rule in var.lb_security_group_rules:
         # Return true if there is more than one of `icmp`, `udp`, or `tcp`
         true if length(
           [
@@ -388,7 +394,7 @@ variable lb_security_group_rules {
     condition     = length(distinct(
       flatten([
         # Check through rules
-        for rule in var.security_group_rules:
+        for rule in var.lb_security_group_rules:
         # Return false if direction is not valid
         false if !contains(["inbound", "outbound"], rule.direction)
       ])
@@ -400,7 +406,7 @@ variable lb_security_group_rules {
     condition     = length(distinct(
       flatten([
         # Check through rules
-        for rule in var.security_group_rules:
+        for rule in var.lb_security_group_rules:
         # Return false if direction is not valid
         false if !can(regex("^([a-z]|[a-z][-a-z0-9]*[a-z0-9])$", rule.name))
       ])
